@@ -1,7 +1,10 @@
-"""
-خدمة الأخبار - مشروع نائبك
-Flask + SQLite News Service
-"""
+'''
+Naebak News Service - Flask Application
+
+This is the main application file for the Naebak News Service. It defines the Flask application, configures extensions, and sets up the API endpoints.
+
+The service provides endpoints for retrieving news articles, categories, and tags, as well as for service health checks and administrative tasks.
+'''
 from flask import Flask, request, jsonify, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -15,86 +18,84 @@ import logging
 from functools import wraps
 import sqlite3
 
-# إعداد التطبيق
+# App setup
 app = Flask(__name__)
 
-# تحميل التكوين
+# Load configuration
 if os.path.exists('config_updated.py'):
     from config_updated import current_config
     app.config.from_object(current_config)
 else:
-    # إعدادات افتراضية
+    # Default settings
     app.config['SECRET_KEY'] = 'naebak-news-service-secret-key-2024'
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///naebak_news.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# إعداد المكونات
+# Setup components
 db = SQLAlchemy(app)
 cors = CORS(app)
 cache = Cache(app)
 mail = Mail(app)
 
-# إعداد Rate Limiting
+# Setup Rate Limiting
 limiter = Limiter(
     app,
     key_func=get_remote_address,
     default_limits=["100 per hour"]
 )
 
-# إعداد السجلات
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# استيراد النماذج
+# Import models
 try:
     from app.models import (
         NewsCategory, NewsTag, NewsItem, NewsComment, 
         NewsStats, NewsSettings
     )
 except ImportError:
-    logger.warning("لم يتم العثور على نماذج البيانات")
-
+    logger.warning("Data models not found")
 
 def require_api_key(f):
-    """التحقق من مفتاح API"""
+    '''Decorator to require an API key for an endpoint.'''
     @wraps(f)
     def decorated_function(*args, **kwargs):
         api_key = request.headers.get('X-API-Key')
         if not api_key or api_key != app.config.get('API_KEY'):
-            return jsonify({'error': 'مفتاح API غير صحيح'}), 401
+            return jsonify({'error': 'Invalid API key'}), 401
         return f(*args, **kwargs)
     return decorated_function
 
-
 def require_admin_key(f):
-    """التحقق من مفتاح الإدارة"""
+    '''Decorator to require an admin key for an endpoint.'''
     @wraps(f)
     def decorated_function(*args, **kwargs):
         admin_key = request.headers.get('X-Admin-Key')
         if not admin_key or admin_key != app.config.get('ADMIN_KEY'):
-            return jsonify({'error': 'مفتاح الإدارة غير صحيح'}), 401
+            return jsonify({'error': 'Invalid admin key'}), 401
         return f(*args, **kwargs)
     return decorated_function
 
 
 @app.before_request
 def before_request():
-    """إعداد قبل كل طلب"""
+    '''Set up before each request.'''
     g.start_time = datetime.utcnow()
 
 
 @app.after_request
 def after_request(response):
-    """إعداد بعد كل طلب"""
-    # إضافة headers للأمان
+    '''Set up after each request.'''
+    # Add security headers
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     
-    # إضافة وقت الاستجابة
+    # Add response time
     if hasattr(g, 'start_time'):
         response_time = (datetime.utcnow() - g.start_time).total_seconds()
         response.headers['X-Response-Time'] = f'{response_time:.3f}s'
@@ -104,29 +105,37 @@ def after_request(response):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """فحص صحة الخدمة"""
+    '''
+    Health check endpoint for the service.
+
+    This endpoint is used to monitor the health of the service. It checks the
+    database connection and the cache status.
+
+    Returns:
+        A JSON response with the health status of the service.
+    '''
     try:
-        # فحص قاعدة البيانات
+        # Check database
         db.session.execute('SELECT 1')
         
-        # فحص Redis (إذا كان متاحاً)
-        cache_status = 'متاح'
+        # Check Redis (if available)
+        cache_status = 'available'
         try:
             cache.get('test')
         except:
-            cache_status = 'غير متاح'
+            cache_status = 'unavailable'
         
         return jsonify({
             'status': 'healthy',
             'service': app.config.get('SERVICE_NAME', 'naebak-news-service'),
             'version': app.config.get('SERVICE_VERSION', '1.0.0'),
             'timestamp': datetime.utcnow().isoformat(),
-            'database': 'متصل',
+            'database': 'connected',
             'cache': cache_status,
-            'uptime': 'متاح'
+            'uptime': 'available'
         })
     except Exception as e:
-        logger.error(f"خطأ في فحص الصحة: {str(e)}")
+        logger.error(f"Error in health check: {str(e)}")
         return jsonify({
             'status': 'unhealthy',
             'error': str(e)
@@ -136,7 +145,23 @@ def health_check():
 @app.route('/api/news', methods=['GET'])
 @limiter.limit("50 per minute")
 def get_news():
-    """الحصول على قائمة الأخبار"""
+    '''
+    Get a list of news items.
+
+    This endpoint returns a paginated list of published news items. The list can be
+    filtered by category, tag, featured status, and breaking news status.
+
+    Args (query parameters):
+        page (int): The page number for pagination.
+        per_page (int): The number of items per page.
+        category (str): The name of the category to filter by.
+        tag (str): The name of the tag to filter by.
+        featured (bool): Whether to filter by featured status.
+        breaking (bool): Whether to filter by breaking news status.
+
+    Returns:
+        A JSON response with a list of news items and pagination information.
+    '''
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 10, type=int), 50)
@@ -145,7 +170,7 @@ def get_news():
         featured = request.args.get('featured', type=bool)
         breaking = request.args.get('breaking', type=bool)
         
-        # بناء الاستعلام
+        # Build query
         query = NewsItem.query.filter_by(is_published=True)
         
         if category:
@@ -160,10 +185,10 @@ def get_news():
         if breaking is not None:
             query = query.filter(NewsItem.is_breaking == breaking)
         
-        # ترتيب حسب الأولوية والتاريخ
+        # Order by priority and date
         query = query.order_by(NewsItem.priority.desc(), NewsItem.published_at.desc())
         
-        # تطبيق التصفح
+        # Apply pagination
         news_items = query.paginate(
             page=page, 
             per_page=per_page, 
@@ -171,22 +196,7 @@ def get_news():
         )
         
         return jsonify({
-            'news': [{
-                'id': item.id,
-                'title': item.title,
-                'slug': item.slug,
-                'summary': item.summary,
-                'category': item.category.name if item.category else None,
-                'tags': [tag.name for tag in item.tags],
-                'is_featured': item.is_featured,
-                'is_breaking': item.is_breaking,
-                'priority': item.priority,
-                'author_name': item.author_name,
-                'published_at': item.published_at.isoformat() if item.published_at else None,
-                'view_count': item.view_count,
-                'like_count': item.like_count,
-                'comment_count': item.comment_count
-            } for item in news_items.items],
+            'news': [item.to_dict() for item in news_items.items],
             'pagination': {
                 'page': page,
                 'per_page': per_page,
@@ -198,113 +208,101 @@ def get_news():
         })
         
     except Exception as e:
-        logger.error(f"خطأ في الحصول على الأخبار: {str(e)}")
-        return jsonify({'error': 'خطأ في الخادم'}), 500
+        logger.error(f"Error getting news: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/api/news/<slug>', methods=['GET'])
 @limiter.limit("30 per minute")
 def get_news_item(slug):
-    """الحصول على خبر محدد"""
+    '''
+    Get a specific news item.
+
+    This endpoint returns the details of a specific news item, identified by its slug.
+    It also increments the view count for the news item.
+
+    Args:
+        slug (str): The slug of the news item.
+
+    Returns:
+        A JSON response with the details of the news item.
+    '''
     try:
         news_item = NewsItem.query.filter_by(slug=slug, is_published=True).first()
         if not news_item:
-            return jsonify({'error': 'الخبر غير موجود'}), 404
+            return jsonify({'error': 'News item not found'}), 404
         
-        # تحديث عدد المشاهدات
-        news_item.view_count += 1
-        db.session.commit()
+        # Update view count
+        news_item.increment_view_count()
         
-        return jsonify({
-            'id': news_item.id,
-            'title': news_item.title,
-            'slug': news_item.slug,
-            'summary': news_item.summary,
-            'content': news_item.content,
-            'category': {
-                'name': news_item.category.name,
-                'color': news_item.category.color
-            } if news_item.category else None,
-            'tags': [{
-                'name': tag.name,
-                'color': tag.color
-            } for tag in news_item.tags],
-            'is_featured': news_item.is_featured,
-            'is_breaking': news_item.is_breaking,
-            'priority': news_item.priority,
-            'author_name': news_item.author_name,
-            'published_at': news_item.published_at.isoformat() if news_item.published_at else None,
-            'updated_at': news_item.updated_at.isoformat() if news_item.updated_at else None,
-            'view_count': news_item.view_count,
-            'like_count': news_item.like_count,
-            'share_count': news_item.share_count,
-            'comment_count': news_item.comment_count,
-            'meta_title': news_item.meta_title,
-            'meta_description': news_item.meta_description
-        })
+        return jsonify(news_item.to_dict(include_content=True))
         
     except Exception as e:
-        logger.error(f"خطأ في الحصول على الخبر: {str(e)}")
-        return jsonify({'error': 'خطأ في الخادم'}), 500
+        logger.error(f"Error getting news item: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/api/categories', methods=['GET'])
 @cache.cached(timeout=300)
 def get_categories():
-    """الحصول على تصنيفات الأخبار"""
+    '''
+    Get a list of news categories.
+
+    This endpoint returns a list of all active news categories, ordered by display order.
+
+    Returns:
+        A JSON response with a list of news categories.
+    '''
     try:
         categories = NewsCategory.query.filter_by(is_active=True).order_by(NewsCategory.display_order).all()
         
-        return jsonify({
-            'categories': [{
-                'id': cat.id,
-                'name': cat.name,
-                'name_en': cat.name_en,
-                'description': cat.description,
-                'icon': cat.icon,
-                'color': cat.color,
-                'news_count': cat.news_count
-            } for cat in categories]
-        })
+        return jsonify({'categories': [cat.to_dict() for cat in categories]})
         
     except Exception as e:
-        logger.error(f"خطأ في الحصول على التصنيفات: {str(e)}")
-        return jsonify({'error': 'خطأ في الخادم'}), 500
+        logger.error(f"Error getting categories: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/api/tags', methods=['GET'])
 @cache.cached(timeout=300)
 def get_tags():
-    """الحصول على علامات الأخبار"""
+    '''
+    Get a list of news tags.
+
+    This endpoint returns a list of the top 20 most used active news tags.
+
+    Returns:
+        A JSON response with a list of news tags.
+    '''
     try:
         tags = NewsTag.query.filter_by(is_active=True).order_by(NewsTag.usage_count.desc()).limit(20).all()
         
-        return jsonify({
-            'tags': [{
-                'id': tag.id,
-                'name': tag.name,
-                'name_en': tag.name_en,
-                'color': tag.color,
-                'usage_count': tag.usage_count
-            } for tag in tags]
-        })
+        return jsonify({'tags': [tag.to_dict() for tag in tags]})
         
     except Exception as e:
-        logger.error(f"خطأ في الحصول على العلامات: {str(e)}")
-        return jsonify({'error': 'خطأ في الخادم'}), 500
+        logger.error(f"Error getting tags: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/api/stats', methods=['GET'])
 @require_api_key
 def get_stats():
-    """الحصول على إحصائيات الخدمة"""
+    '''
+    Get service statistics.
+
+    This endpoint returns statistics about the news service, including the total
+    number of news items, categories, tags, and comments.
+
+    Returns:
+        A JSON response with the service statistics.
+    '''
     try:
         total_news = NewsItem.query.filter_by(is_published=True).count()
         total_categories = NewsCategory.query.filter_by(is_active=True).count()
         total_tags = NewsTag.query.filter_by(is_active=True).count()
         total_comments = NewsComment.query.filter_by(is_approved=True).count()
         
-        # إحصائيات اليوم
+        # Today's stats
         today = datetime.utcnow().date()
         today_stats = NewsStats.query.filter_by(date=today).first()
         
@@ -319,68 +317,75 @@ def get_stats():
         })
         
     except Exception as e:
-        logger.error(f"خطأ في الحصول على الإحصائيات: {str(e)}")
-        return jsonify({'error': 'خطأ في الخادم'}), 500
+        logger.error(f"Error getting stats: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/api/admin/load-data', methods=['POST'])
 @require_admin_key
 def load_initial_data():
-    """تحميل البيانات الأساسية"""
+    '''
+    Load initial data.
+
+    This is an admin-only endpoint for loading initial data into the database.
+
+    Returns:
+        A JSON response with a success or error message.
+    '''
     try:
         from app.utils.load_data import load_all_initial_data
         
         success = load_all_initial_data()
         if success:
-            return jsonify({'message': 'تم تحميل البيانات الأساسية بنجاح'})
+            return jsonify({'message': 'Initial data loaded successfully'})
         else:
-            return jsonify({'error': 'فشل في تحميل البيانات'}), 500
+            return jsonify({'error': 'Failed to load data'}), 500
             
     except Exception as e:
-        logger.error(f"خطأ في تحميل البيانات: {str(e)}")
+        logger.error(f"Error loading data: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.errorhandler(404)
 def not_found(error):
-    """معالج خطأ 404"""
-    return jsonify({'error': 'المورد غير موجود'}), 404
+    '''404 error handler.'''
+    return jsonify({'error': 'Resource not found'}), 404
 
 
 @app.errorhandler(500)
 def internal_error(error):
-    """معالج خطأ 500"""
-    logger.error(f"خطأ داخلي: {str(error)}")
-    return jsonify({'error': 'خطأ داخلي في الخادم'}), 500
+    '''500 error handler.'''
+    logger.error(f"Internal error: {str(error)}")
+    return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.errorhandler(429)
 def ratelimit_handler(e):
-    """معالج تجاوز الحد المسموح"""
-    return jsonify({'error': 'تم تجاوز الحد المسموح من الطلبات'}), 429
-
+    '''Ratelimit error handler.'''
+    return jsonify({'error': 'Ratelimit exceeded'}), 429
 
 def create_tables():
-    """إنشاء جداول قاعدة البيانات"""
+    '''Create database tables.'''
     try:
         with app.app_context():
             db.create_all()
-            logger.info("تم إنشاء جداول قاعدة البيانات بنجاح")
+            logger.info("Database tables created successfully")
     except Exception as e:
-        logger.error(f"خطأ في إنشاء الجداول: {str(e)}")
+        logger.error(f"Error creating tables: {str(e)}")
 
 
 if __name__ == '__main__':
-    # إنشاء الجداول
+    # Create tables
     create_tables()
     
-    # تشغيل التطبيق
+    # Run app
     host = app.config.get('HOST', '0.0.0.0')
     port = app.config.get('PORT', 8009)
     debug = app.config.get('DEBUG', False)
     
-    logger.info(f"🚀 بدء تشغيل خدمة الأخبار على {host}:{port}")
-    logger.info(f"📊 وضع التطوير: {'مفعل' if debug else 'معطل'}")
-    logger.info(f"🗄️ قاعدة البيانات: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+    logger.info(f"🚀 Starting news service on {host}:{port}")
+    logger.info(f"📊 Debug mode: {'enabled' if debug else 'disabled'}")
+    logger.info(f"🗄️ Database: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     
     app.run(host=host, port=port, debug=debug)
+'''

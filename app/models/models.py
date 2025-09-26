@@ -1,7 +1,10 @@
-"""
-نماذج خدمة الأخبار - مشروع نائبك
-Flask + SQLite Models
-"""
+'''
+News Service Models - Naebak Project
+Flask + SQLAlchemy Models
+
+This module defines the database models for the Naebak News Service.
+It includes models for news categories, tags, news items, comments, statistics, and settings.
+'''
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import json
@@ -10,9 +13,23 @@ db = SQLAlchemy()
 
 
 class NewsCategory(db.Model):
-    """تصنيفات الأخبار"""
+    """Represents a category for news items.
+
+    Attributes:
+        id (int): The primary key.
+        name (str): The name of the category in Arabic.
+        name_en (str): The name of the category in English.
+        description (str): A description of the category in Arabic.
+        description_en (str): A description of the category in English.
+        icon (str): An icon for the category (e.g., FontAwesome class).
+        color (str): A hex color code for the category.
+        display_order (int): The order in which the category should be displayed.
+        is_active (bool): Whether the category is active and should be displayed.
+        created_at (datetime): The timestamp when the category was created.
+        news_items (relationship): A relationship to the news items in this category.
+    """
     __tablename__ = 'news_categories'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True)
     name_en = db.Column(db.String(100), nullable=False)
@@ -23,14 +40,14 @@ class NewsCategory(db.Model):
     display_order = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # العلاقات
+
     news_items = db.relationship('NewsItem', backref='category', lazy='dynamic')
-    
+
     def __repr__(self):
         return f'<NewsCategory {self.name}>'
-    
+
     def to_dict(self):
+        """Serializes the object to a dictionary."""
         return {
             'id': self.id,
             'name': self.name,
@@ -47,9 +64,20 @@ class NewsCategory(db.Model):
 
 
 class NewsTag(db.Model):
-    """علامات الأخبار"""
+    """Represents a tag for news items.
+
+    Attributes:
+        id (int): The primary key.
+        name (str): The name of the tag in Arabic.
+        name_en (str): The name of the tag in English.
+        description (str): A description of the tag.
+        color (str): A hex color code for the tag.
+        usage_count (int): The number of times the tag has been used.
+        is_active (bool): Whether the tag is active.
+        created_at (datetime): The timestamp when the tag was created.
+    """
     __tablename__ = 'news_tags'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False, unique=True)
     name_en = db.Column(db.String(50), nullable=False)
@@ -58,11 +86,12 @@ class NewsTag(db.Model):
     usage_count = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     def __repr__(self):
         return f'<NewsTag {self.name}>'
-    
+
     def to_dict(self):
+        """Serializes the object to a dictionary."""
         return {
             'id': self.id,
             'name': self.name,
@@ -75,7 +104,7 @@ class NewsTag(db.Model):
         }
 
 
-# جدول الربط بين الأخبار والعلامات
+# Association table for NewsItem and NewsTag
 news_tags_association = db.Table('news_item_tags',
     db.Column('news_item_id', db.Integer, db.ForeignKey('news_items.id'), primary_key=True),
     db.Column('news_tag_id', db.Integer, db.ForeignKey('news_tags.id'), primary_key=True)
@@ -83,9 +112,46 @@ news_tags_association = db.Table('news_item_tags',
 
 
 class NewsItem(db.Model):
-    """الأخبار والمقالات"""
+    """Represents a news item or article.
+
+    Attributes:
+        id (int): The primary key.
+        title (str): The title of the news item.
+        title_en (str): The English title of the news item.
+        slug (str): The URL-friendly slug for the news item.
+        summary (str): A short summary of the news item.
+        summary_en (str): The English summary of the news item.
+        content (str): The full content of the news item.
+        content_en (str): The English content of the news item.
+        featured_image (str): The URL of the featured image.
+        featured_image_alt (str): The alt text for the featured image.
+        gallery_images (str): A JSON array of gallery image URLs.
+        category_id (int): The foreign key for the news category.
+        tags (relationship): A relationship to the tags associated with the news item.
+        status (str): The status of the news item (e.g., 'draft', 'published', 'archived').
+        is_published (bool): Whether the news item is published.
+        is_featured (bool): Whether the news item is featured.
+        is_breaking (bool): Whether the news item is a breaking news story.
+        priority (int): The priority of the news item.
+        published_at (datetime): The timestamp when the news item was published.
+        expires_at (datetime): The timestamp when the news item expires.
+        created_at (datetime): The timestamp when the news item was created.
+        updated_at (datetime): The timestamp when the news item was last updated.
+        author_id (int): The ID of the author.
+        author_name (str): The name of the author.
+        editor_id (int): The ID of the editor.
+        view_count (int): The number of times the news item has been viewed.
+        like_count (int): The number of likes the news item has received.
+        share_count (int): The number of times the news item has been shared.
+        comment_count (int): The number of comments on the news item.
+        meta_title (str): The meta title for SEO.
+        meta_description (str): The meta description for SEO.
+        meta_keywords (str): The meta keywords for SEO.
+        comments (relationship): A relationship to the comments on the news item.
+        stats (relationship): A relationship to the statistics for the news item.
+    """
     __tablename__ = 'news_items'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     title_en = db.Column(db.String(200))
@@ -94,79 +160,80 @@ class NewsItem(db.Model):
     summary_en = db.Column(db.Text)
     content = db.Column(db.Text, nullable=False)
     content_en = db.Column(db.Text)
-    
-    # الصور والوسائط
+
+    # Images and media
     featured_image = db.Column(db.String(500))
     featured_image_alt = db.Column(db.String(200))
     gallery_images = db.Column(db.Text)  # JSON array
-    
-    # التصنيف والعلامات
+
+    # Category and tags
     category_id = db.Column(db.Integer, db.ForeignKey('news_categories.id'), nullable=False)
     tags = db.relationship('NewsTag', secondary=news_tags_association, backref='news_items')
-    
-    # الحالة والنشر
+
+    # Status and publishing
     status = db.Column(db.String(20), default='draft')  # draft, published, archived
     is_published = db.Column(db.Boolean, default=False)
     is_featured = db.Column(db.Boolean, default=False)
     is_breaking = db.Column(db.Boolean, default=False)
     priority = db.Column(db.Integer, default=0)
-    
-    # التواريخ
+
+    # Timestamps
     published_at = db.Column(db.DateTime)
     expires_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # المؤلف والمحرر
+
+    # Author and editor
     author_id = db.Column(db.Integer)
     author_name = db.Column(db.String(100))
     editor_id = db.Column(db.Integer)
-    
-    # الإحصائيات
+
+    # Statistics
     view_count = db.Column(db.Integer, default=0)
     like_count = db.Column(db.Integer, default=0)
     share_count = db.Column(db.Integer, default=0)
     comment_count = db.Column(db.Integer, default=0)
-    
+
     # SEO
     meta_title = db.Column(db.String(200))
     meta_description = db.Column(db.String(300))
     meta_keywords = db.Column(db.String(500))
-    
-    # العلاقات
+
+    # Relationships
     comments = db.relationship('NewsComment', backref='news_item', lazy='dynamic', cascade='all, delete-orphan')
     stats = db.relationship('NewsStats', backref='news_item', lazy='dynamic', cascade='all, delete-orphan')
-    
+
     def __repr__(self):
         return f'<NewsItem {self.title}>'
-    
+
     def is_active(self):
-        """التحقق من أن الخبر نشط ولم ينته"""
+        """Checks if the news item is active and not expired."""
         if not self.is_published:
             return False
         if self.expires_at and self.expires_at < datetime.utcnow():
             return False
         return True
-    
+
     def increment_view_count(self):
-        """زيادة عدد المشاهدات"""
+        """Increments the view count of the news item."""
         self.view_count += 1
         db.session.commit()
-    
+
     def get_gallery_images(self):
-        """الحصول على صور المعرض"""
+        """Returns the gallery images as a list."""
         if self.gallery_images:
             try:
                 return json.loads(self.gallery_images)
             except:
                 return []
         return []
-    
+
     def set_gallery_images(self, images):
-        """تعيين صور المعرض"""
+        """Sets the gallery images from a list."""
         self.gallery_images = json.dumps(images) if images else None
-    
+
     def to_dict(self, include_content=False):
+        """Serializes the object to a dictionary."""
         data = {
             'id': self.id,
             'title': self.title,
@@ -197,50 +264,69 @@ class NewsItem(db.Model):
             'meta_description': self.meta_description,
             'is_active': self.is_active()
         }
-        
+
         if include_content:
             data.update({
                 'content': self.content,
                 'content_en': self.content_en
             })
-        
+
         return data
 
 
 class NewsComment(db.Model):
-    """تعليقات الأخبار"""
+    """Represents a comment on a news item.
+
+    Attributes:
+        id (int): The primary key.
+        news_item_id (int): The foreign key for the news item.
+        user_id (int): The ID of the user who made the comment.
+        user_name (str): The name of the user.
+        user_email (str): The email of the user.
+        user_ip (str): The IP address of the user.
+        content (str): The content of the comment.
+        parent_id (int): The ID of the parent comment for replies.
+        is_approved (bool): Whether the comment is approved.
+        is_spam (bool): Whether the comment is marked as spam.
+        is_deleted (bool): Whether the comment is deleted.
+        created_at (datetime): The timestamp when the comment was created.
+        approved_at (datetime): The timestamp when the comment was approved.
+        approved_by (int): The ID of the admin who approved the comment.
+        replies (relationship): A relationship to the replies to this comment.
+    """
     __tablename__ = 'news_comments'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     news_item_id = db.Column(db.Integer, db.ForeignKey('news_items.id'), nullable=False)
-    
-    # معلومات المعلق
+
+    # Commenter information
     user_id = db.Column(db.Integer)
     user_name = db.Column(db.String(100), nullable=False)
     user_email = db.Column(db.String(150))
     user_ip = db.Column(db.String(45))
-    
-    # المحتوى
+
+    # Content
     content = db.Column(db.Text, nullable=False)
-    parent_id = db.Column(db.Integer, db.ForeignKey('news_comments.id'))  # للردود
-    
-    # الحالة
+    parent_id = db.Column(db.Integer, db.ForeignKey('news_comments.id'))  # For replies
+
+    # Status
     is_approved = db.Column(db.Boolean, default=False)
     is_spam = db.Column(db.Boolean, default=False)
     is_deleted = db.Column(db.Boolean, default=False)
-    
-    # التواريخ
+
+    # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     approved_at = db.Column(db.DateTime)
     approved_by = db.Column(db.Integer)
-    
-    # العلاقات
+
+    # Relationships
     replies = db.relationship('NewsComment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
-    
+
     def __repr__(self):
         return f'<NewsComment {self.id} by {self.user_name}>'
-    
+
     def to_dict(self):
+        """Serializes the object to a dictionary."""
         return {
             'id': self.id,
             'news_item_id': self.news_item_id,
@@ -257,39 +343,59 @@ class NewsComment(db.Model):
 
 
 class NewsStats(db.Model):
-    """إحصائيات الأخبار اليومية"""
+    """Represents daily statistics for a news item.
+
+    Attributes:
+        id (int): The primary key.
+        news_item_id (int): The foreign key for the news item.
+        date (date): The date of the statistics.
+        views (int): The number of views.
+        unique_views (int): The number of unique views.
+        likes (int): The number of likes.
+        shares (int): The number of shares.
+        comments (int): The number of comments.
+        avg_read_time (float): The average read time in seconds.
+        bounce_rate (float): The bounce rate.
+        engagement_rate (float): The engagement rate.
+        direct_visits (int): The number of direct visits.
+        social_visits (int): The number of visits from social media.
+        search_visits (int): The number of visits from search engines.
+        referral_visits (int): The number of referral visits.
+        created_at (datetime): The timestamp when the stats were created.
+    """
     __tablename__ = 'news_stats'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     news_item_id = db.Column(db.Integer, db.ForeignKey('news_items.id'), nullable=False)
     date = db.Column(db.Date, nullable=False)
-    
-    # الإحصائيات
+
+    # Statistics
     views = db.Column(db.Integer, default=0)
     unique_views = db.Column(db.Integer, default=0)
     likes = db.Column(db.Integer, default=0)
     shares = db.Column(db.Integer, default=0)
     comments = db.Column(db.Integer, default=0)
-    
-    # معدلات التفاعل
-    avg_read_time = db.Column(db.Float, default=0.0)  # بالثواني
+
+    # Engagement metrics
+    avg_read_time = db.Column(db.Float, default=0.0)  # in seconds
     bounce_rate = db.Column(db.Float, default=0.0)
     engagement_rate = db.Column(db.Float, default=0.0)
-    
-    # مصادر الزيارات
+
+    # Traffic sources
     direct_visits = db.Column(db.Integer, default=0)
     social_visits = db.Column(db.Integer, default=0)
     search_visits = db.Column(db.Integer, default=0)
     referral_visits = db.Column(db.Integer, default=0)
-    
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     __table_args__ = (db.UniqueConstraint('news_item_id', 'date', name='unique_news_date_stats'),)
-    
+
     def __repr__(self):
         return f'<NewsStats {self.news_item_id} - {self.date}>'
-    
+
     def to_dict(self):
+        """Serializes the object to a dictionary."""
         return {
             'id': self.id,
             'news_item_id': self.news_item_id,
@@ -311,9 +417,23 @@ class NewsStats(db.Model):
 
 
 class NewsSettings(db.Model):
-    """إعدادات خدمة الأخبار"""
+    """Represents settings for the news service.
+
+    This model stores key-value settings for the news service, allowing for dynamic configuration.
+
+    Attributes:
+        id (int): The primary key.
+        setting_key (str): The unique key for the setting.
+        setting_value (str): The value of the setting.
+        setting_type (str): The data type of the setting (e.g., 'string', 'integer', 'boolean', 'json').
+        description (str): A description of the setting.
+        category (str): The category of the setting (e.g., 'general', 'seo').
+        is_public (bool): Whether the setting is public and can be exposed via an API.
+        created_at (datetime): The timestamp when the setting was created.
+        updated_at (datetime): The timestamp when the setting was last updated.
+    """
     __tablename__ = 'news_settings'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     setting_key = db.Column(db.String(100), unique=True, nullable=False)
     setting_value = db.Column(db.Text)
@@ -323,12 +443,12 @@ class NewsSettings(db.Model):
     is_public = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     def __repr__(self):
         return f'<NewsSettings {self.setting_key}>'
-    
+
     def get_value(self):
-        """الحصول على القيمة بالنوع الصحيح"""
+        """Returns the setting value in the correct data type."""
         if self.setting_type == 'integer':
             return int(self.setting_value) if self.setting_value else 0
         elif self.setting_type == 'boolean':
@@ -340,15 +460,16 @@ class NewsSettings(db.Model):
                 return {}
         else:
             return self.setting_value or ''
-    
+
     def set_value(self, value):
-        """تعيين القيمة بالنوع الصحيح"""
+        """Sets the setting value in the correct data type."""
         if self.setting_type == 'json':
             self.setting_value = json.dumps(value)
         else:
             self.setting_value = str(value)
-    
+
     def to_dict(self):
+        """Serializes the object to a dictionary."""
         return {
             'id': self.id,
             'setting_key': self.setting_key,
@@ -362,7 +483,7 @@ class NewsSettings(db.Model):
         }
 
 
-# إنشاء فهارس لتحسين الأداء
+# Create indexes for performance optimization
 db.Index('idx_news_published', NewsItem.is_published, NewsItem.published_at)
 db.Index('idx_news_category', NewsItem.category_id, NewsItem.is_published)
 db.Index('idx_news_featured', NewsItem.is_featured, NewsItem.priority)
@@ -370,3 +491,4 @@ db.Index('idx_news_breaking', NewsItem.is_breaking, NewsItem.created_at)
 db.Index('idx_news_slug', NewsItem.slug)
 db.Index('idx_comments_approved', NewsComment.is_approved, NewsComment.created_at)
 db.Index('idx_stats_date', NewsStats.date, NewsStats.news_item_id)
+'''
